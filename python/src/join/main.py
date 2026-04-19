@@ -24,8 +24,8 @@ class JoinFilter:
     def _merge_tops(self, tops):
         merged = {}
         for top in tops:
-            for f, a in top:
-                merged[f] = merged.get(f, fruit_item.FruitItem(f, 0)) + fruit_item.FruitItem(f, a)
+            for fi in top:
+                merged[fi.fruit] = merged.get(fi.fruit, fruit_item.FruitItem(fi.fruit, 0)) + fi
         top_chunk = sorted(merged.values())[-TOP_SIZE:]
         top_chunk.reverse()
         return [[fi.fruit, fi.amount] for fi in top_chunk]
