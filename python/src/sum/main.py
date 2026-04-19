@@ -77,6 +77,8 @@ class SumFilter:
                     ),
                     routing_key=f"{AGGREGATION_PREFIX}_{idx}",
                 )
+            client_data.clear()
+            del client_data
             self.aggregation_exchange.send(
                 message_protocol.internal.serialize([client_id])
             )
