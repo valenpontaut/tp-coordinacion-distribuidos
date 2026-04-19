@@ -35,7 +35,9 @@ class SumFilter:
         return hash(f"{fruit}_{client_id}") % AGGREGATION_AMOUNT
 
     def _process_data(self, client_id, fruit, amount):
-        logging.info(f"Processing data: client={client_id} fruit={fruit} amount={amount}")
+        logging.info(
+            f"Processing data: client={client_id} fruit={fruit} amount={amount}"
+        )
         with self.lock:
             client_data = self.amount_by_fruit.setdefault(client_id, {})
             client_data[fruit] = client_data.get(
@@ -67,10 +69,14 @@ class SumFilter:
 
         def on_eof(message, ack, nack):
             client_id = message_protocol.internal.deserialize(message)[0]
-            logging.info(f"EOF received for client {client_id}, flushing accumulated data")
+            logging.info(
+                f"EOF received for client {client_id}, flushing accumulated data"
+            )
             with self.lock:
                 client_data = self.amount_by_fruit.pop(client_id, {})
-            logging.info(f"Sending {len(client_data)} fruit totals to aggregators for client {client_id}")
+            logging.info(
+                f"Sending {len(client_data)} fruit totals to aggregators for client {client_id}"
+            )
             for fi in client_data.values():
                 idx = self._aggregator_idx(client_id, fi.fruit)
                 self.aggregation_exchange.send(
