@@ -2,6 +2,7 @@ import os
 import logging
 import threading
 import signal
+import hashlib
 
 from common import middleware, message_protocol, fruit_item
 
@@ -32,7 +33,8 @@ class SumFilter:
         self.control_thread = None
 
     def _aggregator_idx(self, client_id, fruit):
-        return hash(f"{fruit}_{client_id}") % AGGREGATION_AMOUNT
+        key = f"{fruit}_{client_id}".encode()
+        return int(hashlib.md5(key).hexdigest(), 16) % AGGREGATION_AMOUNT
 
     def _process_data(self, client_id, fruit, amount):
         logging.info(
