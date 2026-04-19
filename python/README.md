@@ -7,6 +7,8 @@
   - [Shutdown](#shutdown)
 - [Coordinación entre instancias de Aggregation](#coordinación-entre-instancias-de-aggregation)
   - [Shutdown](#shutdown-1)
+- [Joiner](#joiner)
+  - [Shutdown](#shutdown-2)
 - [Escalabilidad respecto a los clientes](#escalabilidad-respecto-a-los-clientes)
 - [Escalabilidad respecto a la cantidad de controles](#escalabilidad-respecto-a-la-cantidad-de-controles)
 
@@ -49,6 +51,18 @@ Tras el flush se liberan explícitamente las estructuras del cliente con `clear(
 ### Shutdown
 
 Al recibir `SIGTERM`, el proceso detiene el consumo llamando `stop_consuming()` sobre el exchange de entrada, lo que cierra el canal y la conexión. Una vez que `start_consuming` retorna, `start()` cierra el `output_queue`. Las estructuras en memoria (`fruit_top`, `eof_count`) se liberan cuando el proceso termina.
+
+## Joiner
+
+El Joiner recibe los tops parciales de cada instancia de Aggregation y los mergea en el top final por cliente. Mantiene `partial_tops` (`{client_id: [[fruit, amount], ...]}`) donde acumula los tops parciales a medida que llegan. Cuando recibe `AGGREGATION_AMOUNT` tops para un cliente, suma los amounts de frutas que aparecen en múltiples tops, ordena con `sorted()` y toma los últimos `TOP_SIZE` elementos.
+
+Un Aggregator que no recibió frutas de un cliente igual envía un top parcial vacío, ya que el EOF de cada Sum llega a todos los Aggregators. El Joiner lo cuenta como uno de los `AGGREGATION_AMOUNT` esperados y el merge lo ignora naturalmente.
+
+El resultado final se serializa como `[client_id, [[fruit, amount], ...]]` y se envía al Gateway, que lo rutea al cliente correcto usando el `client_id` como filtro.
+
+### Shutdown
+
+Al recibir `SIGTERM`, el proceso detiene el consumo llamando `stop_consuming()` sobre el `input_queue`. Una vez que `start_consuming` retorna, `start()` cierra el `output_queue`.
 
 ## Escalabilidad respecto a los clientes
 
