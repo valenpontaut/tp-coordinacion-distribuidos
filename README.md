@@ -54,6 +54,10 @@ Cuando `eof_count[client_id]` alcanza `SUM_AMOUNT`, el Aggregator sabe que recib
 
 Tras el flush se liberan explícitamente las estructuras del cliente con `clear()` y `pop()`.
 
+<p align="center">
+  <img src="./imgs/aggregators.png" width="80%"/>
+</p>
+
 ### Shutdown
 
 Al recibir `SIGTERM`, el proceso detiene el consumo llamando `stop_consuming()` sobre el exchange de entrada, lo que cierra el canal y la conexión. Una vez que `start_consuming` retorna, `start()` cierra el `output_queue`. Las estructuras en memoria (`fruit_top`, `eof_count`) se liberan cuando el proceso termina.
