@@ -14,11 +14,13 @@
 
 ## Coordinación entre instancias de Sum
 
-Cada instancia de Sum es un contenedor independiente que lee de una cola compartida (`input_queue`). RabbitMQ distribuye los mensajes de forma competitiva: cada mensaje lo procesa exactamente una instancia. Cada instancia acumula en memoria los pares `(fruta, cantidad)` agrupados por `client_id`.
+Cada instancia de Sum es un contenedor independiente que lee de una cola compartida (`input_queue`). RabbitMQ distribuye los mensajes de forma competitiva: cada mensaje lo procesa exactamente una instancia. Cada instancia reenvía los mensajes a su propia cola dedicada (`sum_0`, `sum_1`, ...) y acumula los pares `(fruta, cantidad)` agrupados por `client_id`.
 
 El problema de coordinación surge con el EOF: el mensaje de fin de ingesta de un cliente llega a una sola instancia, pero las demás también tienen datos acumulados de ese cliente que deben enviarse.
 
-Para resolverlo se usa un **exchange de control** de tipo direct (`SUM_CONTROL_EXCHANGE`). Cuando una instancia recibe el EOF de un cliente desde `input_queue`, no flushea inmediatamente sino que publica ese EOF en el exchange de control. Todas las instancias están suscriptas con su propia routing key (`sum_0`, `sum_1`, ...), por lo que cada una recibe una copia. Recién al recibirlo, cada instancia flushea sus datos acumulados hacia los Aggregators —particionados por `hash(fruta, client_id) % M`— y les envía su propio EOF.
+Para resolverlo, cada instancia tiene una cola dedicada que recibe tanto los datos reenviados desde `input_queue` como los EOFs propagados por otras instancias. Cuando una instancia recibe el primer EOF de un cliente por su cola dedicada, lo propaga al resto de las colas dedicadas y flushea sus datos acumulados hacia los Aggregators. Cualquier EOF posterior del mismo cliente se descarta. La cola garantiza el orden FIFO: el EOF siempre llega después de todos los datos del cliente, eliminando la posibilidad de race conditions.
+
+Los datos se rutean a los Aggregators según `hash(fruta, client_id) % M`. El hash se calcula con MD5 de la stdlib, lo que garantiza resultados determinísticos e idénticos en todos los contenedores para el mismo par `(fruta, client_id)`.
 
 De esta forma, con `N` instancias de Sum, cada Aggregator recibe exactamente `N` EOFs por cliente, lo que le permite saber cuándo consolidar su top parcial.
 
@@ -26,10 +28,10 @@ De esta forma, con `N` instancias de Sum, cada Aggregator recibe exactamente `N`
 
 Dado que `pika` en modo blocking no permite escuchar dos fuentes simultáneamente desde un mismo thread, cada instancia de Sum corre dos threads:
 
-- **Thread principal**: consume `input_queue`. Al recibir datos los acumula; al recibir un EOF lo reenvía al exchange de control.
-- **Thread secundario**: consume la routing key propia en `SUM_CONTROL_EXCHANGE`. Al recibir el EOF broadcasteado ejecuta el flush hacia los Aggregators.
+- **Thread principal**: consume `input_queue` y reenvía cada mensaje a la cola dedicada de la instancia.
+- **Thread secundario**: consume la cola dedicada. Acumula datos y maneja el EOF con la lógica de propagación y flush.
 
-Ambos threads comparten `amount_by_fruit`, protegido con un `Lock` para evitar race conditions entre la escritura del thread principal y el `pop` del secundario al momento del flush.
+Todo el estado (`amount_by_fruit`, `eof_received`) vive exclusivamente en el thread secundario, por lo que no se necesita sincronización entre threads.
 
 ### Shutdown
 
@@ -72,5 +74,5 @@ El `client_id` generado por el Gateway al momento de la conexión viaja en todos
 
 La cantidad de instancias se configura mediante variables de entorno (`SUM_AMOUNT`, `AGGREGATION_AMOUNT`) reflejadas en el docker-compose.
 
-- Agregar instancias de **Sum** distribuye la carga de acumulación. El `SUM_CONTROL_EXCHANGE` garantiza que el EOF se propague a todas sin importar cuántas haya. El Aggregator usa `SUM_AMOUNT` para saber cuántos EOFs esperar.
-- Agregar instancias de **Aggregation** distribuye el espacio de frutas. El hash de `(fruta, client_id)` asegura que cada fruta de un cliente siempre va al mismo Aggregator. El Joiner usa `AGGREGATION_AMOUNT` para saber cuántos tops parciales esperar antes de calcular el resultado final.
+- Agregar instancias de **Sum** distribuye la carga de acumulación. Cada instancia tiene su cola dedicada y la propagación del EOF garantiza que todas flusheen sus datos independientemente de cuál reciba el EOF original. El Aggregator usa `SUM_AMOUNT` para saber cuántos EOFs esperar.
+- Agregar instancias de **Aggregation** distribuye el espacio de frutas. El hash determinístico de `(fruta, client_id)` asegura que cada fruta de un cliente siempre va al mismo Aggregator. El Joiner usa `AGGREGATION_AMOUNT` para saber cuántos tops parciales esperar antes de calcular el resultado final.
