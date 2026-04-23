@@ -24,6 +24,10 @@ Los datos se rutean a los Aggregators según `hash(fruta, client_id) % M`. El ha
 
 De esta forma, con `N` instancias de Sum, cada Aggregator recibe exactamente `N` EOFs por cliente, lo que le permite saber cuándo consolidar su top parcial.
 
+<p align="center">
+  <img src="./imgs/sums.png" width="80%"/>
+</p>
+
 ### Modelo de threads
 
 Dado que `pika` en modo blocking no permite escuchar dos fuentes simultáneamente desde un mismo thread, cada instancia de Sum corre dos threads:
